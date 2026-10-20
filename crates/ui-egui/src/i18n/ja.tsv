@@ -361,6 +361,7 @@ filter	Installed	インストール済み
 	Use default	既定を使用
 	New installs use this folder. Updates stay in their current location.	新しいインストールにはこのフォルダーを使用します。更新時は現在の場所を維持します。
 	Custom folders use AppImage on Linux.	Linuxで任意のフォルダーにインストールする場合はAppImageを使用します。
+	On Linux, custom folders use AppImage format.	Linuxで任意のフォルダーにインストールする場合はAppImageを使用します。
 	The system manages install locations here.	この環境ではシステムがインストール先を管理します。
 @msg	couldn't use install folder {path}: {reason}	インストール先フォルダー {path} を使用できませんでした: {reason}
 @msg	this release has no AppImage for a custom install folder	このリリースには任意のインストール先フォルダーで使用できるAppImageがありません
