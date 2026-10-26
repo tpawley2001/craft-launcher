@@ -319,15 +319,20 @@ pub mod linux {
             add(InstallSource::Pacman, packages::parse_pacman(&list));
         }
         let arch = format!("--arch={}", std::env::consts::ARCH);
-        if let Some(list) = crate::process::capture_flatpak(&["list", "--app", &arch, "--columns=application,version"], t) {
-            let mut flatpaks = packages::parse_flatpak_list(&list);
-            // Bundles built from a release tarball often list no version: ask Flatpak directly.
-            for (id, version) in flatpaks.iter_mut().filter(|(id, v)| v.is_empty() && id.starts_with("ai.storyteller.")) {
-                if let Some(v) = crate::process::capture_flatpak(&["info", &arch, id], t).as_deref().and_then(packages::parse_flatpak_info) {
-                    *version = v;
+        // User installs first: `packages::find` takes the first match, so an app installed both ways reads
+        // the user copy the launcher updates, not a stale system one (#881).
+        for scope in ["--user", "--system"] {
+            if let Some(list) = crate::process::capture_flatpak(&["list", "--app", scope, &arch, "--columns=application,version"], t) {
+                let mut flatpaks = packages::parse_flatpak_list(&list);
+                // Bundles built from a release tarball often list no version: ask Flatpak directly.
+                for (id, version) in flatpaks.iter_mut().filter(|(id, v)| v.is_empty() && id.starts_with("ai.storyteller.")) {
+                    if let Some(v) = crate::process::capture_flatpak(&["info", scope, &arch, id], t).as_deref().and_then(packages::parse_flatpak_info)
+                    {
+                        *version = v;
+                    }
                 }
+                add(InstallSource::Flatpak, flatpaks);
             }
-            add(InstallSource::Flatpak, flatpaks);
         }
         out
     }
