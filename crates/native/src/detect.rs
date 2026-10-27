@@ -320,14 +320,16 @@ pub mod linux {
         }
         let arch = format!("--arch={}", std::env::consts::ARCH);
         // User installs first: `packages::find` takes the first match, so an app installed both ways reads
-        // the user copy the launcher updates, not a stale system one (#881).
-        for scope in ["--user", "--system"] {
-            if let Some(list) = crate::process::capture_flatpak(&["list", "--app", scope, &arch, "--columns=application,version"], t) {
+        // the user copy the launcher updates, not a stale system one (#881). The unscoped list after it
+        // still covers every system installation, named ones included (`--system` is only the default one).
+        for scope in [&["--user"][..], &[]] {
+            let list_args = [&["list", "--app"][..], scope, &[&arch, "--columns=application,version"]].concat();
+            if let Some(list) = crate::process::capture_flatpak(&list_args, t) {
                 let mut flatpaks = packages::parse_flatpak_list(&list);
                 // Bundles built from a release tarball often list no version: ask Flatpak directly.
                 for (id, version) in flatpaks.iter_mut().filter(|(id, v)| v.is_empty() && id.starts_with("ai.storyteller.")) {
-                    if let Some(v) = crate::process::capture_flatpak(&["info", scope, &arch, id], t).as_deref().and_then(packages::parse_flatpak_info)
-                    {
+                    let info_args = [&["info"][..], scope, &[&arch, id]].concat();
+                    if let Some(v) = crate::process::capture_flatpak(&info_args, t).as_deref().and_then(packages::parse_flatpak_info) {
                         *version = v;
                     }
                 }
