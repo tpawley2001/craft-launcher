@@ -256,6 +256,19 @@ pub mod windows {
         crate::msi_context::single_scope(scopes)
     }
 
+    /// How an exe path is stored in `Installed::location`. One function builds it for `detect` and for
+    /// the comparison below, so the two can never disagree on spelling.
+    fn location_text(exe: &std::path::Path) -> String {
+        exe.display().to_string()
+    }
+
+    /// Whether `location` is the exe the record `product_code` resolves in its own scope. False for
+    /// a path that only the launch fallback (`exe_in_any_scope`) found, so an update never takes its
+    /// folder from another scope.
+    pub fn location_is_in_record_scope(app: &CraftApp, product_code: &str, location: &str) -> bool {
+        msi_installs(app).into_iter().find(|m| m.product_code == product_code).and_then(|m| m.exe).is_some_and(|exe| location_text(&exe) == location)
+    }
+
     /// Every Windows Installer entry for `app`, newest first.
     pub fn msi_installs(app: &CraftApp) -> Vec<MsiInstall> {
         let mut out = Vec::new();
@@ -332,23 +345,74 @@ pub mod windows {
             }
             roots
         };
-        let launcher_folders = suite_folders(app, &roots);
-        if let Some(found) = launcher_folders.iter().find_map(|dir| exe_candidates(app, Some(dir), &[]).into_iter().find(|p| p.exists())) {
-            return Some(found);
+        exe_in_roots(app, roots)
+    }
+
+    /// Where the exe may be under the given install roots, best first: the launcher's own folder, then
+    /// the `ArtCraft` suite folder of each root, then the bare roots (older installs). Not checked on
+    /// disk.
+    fn candidates_in_roots(app: &CraftApp, roots: &[PathBuf]) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = suite_folders(app, roots).iter().flat_map(|dir| exe_candidates(app, Some(dir), &[])).collect();
+        let mut dirs: Vec<PathBuf> = roots.iter().map(|root| root.join("ArtCraft")).collect();
+        dirs.extend(roots.iter().cloned());
+        out.extend(exe_candidates(app, None, &dirs));
+        out
+    }
+
+    /// The first exe under the given install roots.
+    pub(super) fn exe_in_roots(app: &CraftApp, roots: Vec<PathBuf>) -> Option<PathBuf> {
+        candidates_in_roots(app, &roots).into_iter().find(|p| p.exists())
+    }
+
+    /// Every exe under the given install roots, in the order `exe_in_roots` prefers them.
+    pub(super) fn exe_all_in_roots(app: &CraftApp, roots: Vec<PathBuf>) -> Vec<PathBuf> {
+        candidates_in_roots(app, &roots).into_iter().filter(|p| p.exists()).collect()
+    }
+
+    /// The app's exe directly in `folder`, under any name it has shipped as.
+    pub(super) fn exe_in_folder(app: &CraftApp, folder: &std::path::Path) -> Option<PathBuf> {
+        exe_candidates(app, Some(folder), &[]).into_iter().find(|p| p.exists())
+    }
+
+    /// Last resort for opening an app whose uninstall record names no folder and whose exe is not in
+    /// the record's own scope. The package records its folder (`InstallDir`) in the hive of the account
+    /// that installed it, which need not be the hive of its uninstall record: a per-user install can
+    /// leave a per-machine record. So the folder any hive or view recorded is tried first (this finds
+    /// a custom folder), then the usual folders of every scope. This only decides which exe "Open"
+    /// runs and where "Show in folder" goes. An update never takes its folder from here
+    /// (`location_is_in_record_scope`), and the record's scope is unchanged. Every candidate is
+    /// collected and the one whose own version is the record's is chosen, so a leftover older copy in
+    /// another scope is not opened under the newer record's version (`pick_candidate`).
+    fn exe_in_any_scope(app: &CraftApp, version: Option<&version::Version>) -> Option<PathBuf> {
+        let mut found: Vec<PathBuf> =
+            UNINSTALL_ROOTS.into_iter().filter_map(|(hive, flags)| exe_in_folder(app, &install_dir(app, hive, flags)?)).collect();
+        let mut roots: Vec<PathBuf> = std::env::var_os("LOCALAPPDATA").map(|local| PathBuf::from(local).join("Programs")).into_iter().collect();
+        for var in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(pf) = std::env::var_os(var).map(PathBuf::from)
+                && !roots.contains(&pf)
+            {
+                roots.push(pf);
+            }
         }
-        let mut candidates: Vec<PathBuf> = roots.iter().map(|root| root.join("ArtCraft")).collect();
-        candidates.extend(roots);
-        exe_candidates(app, None, &candidates).into_iter().find(|p| p.exists())
+        found.extend(exe_all_in_roots(app, roots));
+        pick_candidate(found, version, executable_version)
+    }
+
+    /// The first candidate whose version is `wanted`; with no match (or no version to match, or exes
+    /// without version info) the first candidate, in the order they were found.
+    pub(super) fn pick_candidate(
+        candidates: Vec<PathBuf>,
+        wanted: Option<&version::Version>,
+        version_of: impl Fn(&std::path::Path) -> Option<version::Version>,
+    ) -> Option<PathBuf> {
+        let matching = wanted.and_then(|want| candidates.iter().find(|c| version_of(c).as_ref() == Some(want)));
+        matching.or_else(|| candidates.first()).cloned()
     }
 
     pub fn detect(app: &CraftApp) -> Option<Installed> {
         let m = msi_installs(app).into_iter().next()?;
-        Some(Installed {
-            version: m.version,
-            source: InstallSource::Msi,
-            location: m.exe.map_or_else(|| app.name.to_string(), |p| p.display().to_string()),
-            package: Some(m.product_code),
-        })
+        let location = m.exe.or_else(|| exe_in_any_scope(app, m.version.as_ref())).map_or_else(|| app.name.to_string(), |p| location_text(&p));
+        Some(Installed { version: m.version, source: InstallSource::Msi, location, package: Some(m.product_code) })
     }
 }
 
@@ -844,6 +908,69 @@ mod tests {
             let with_location: Vec<PathBuf> = std::iter::once(location.join(&exe)).chain(in_program_files).collect();
             assert_eq!(exe_candidates(a, Some(&location), &roots), with_location);
         }
+    }
+
+    /// An app unpacked into the suite folder of a root is found from that root alone, so "Open" works
+    /// for a record whose folder is not the one its scope would name.
+    #[cfg(windows)]
+    #[test]
+    fn an_exe_in_the_suite_folder_of_any_root_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = CraftApp::by_id("deckcraft").unwrap();
+        let folder = dir.path().join("ArtCraft").join("DeckCraft");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("deckcraft.exe"), "x").unwrap();
+        assert_eq!(windows::exe_in_roots(deck, vec![dir.path().to_path_buf()]), Some(folder.join("deckcraft.exe")));
+        assert_eq!(windows::exe_in_roots(deck, vec![dir.path().join("elsewhere")]), None);
+    }
+
+    /// A folder the package recorded is searched as it is, whatever it is called, so an app installed
+    /// to a folder of the user's choosing is found.
+    #[cfg(windows)]
+    #[test]
+    fn an_exe_in_a_custom_recorded_folder_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = CraftApp::by_id("deckcraft").unwrap();
+        let custom = dir.path().join("My Slides");
+        std::fs::create_dir_all(&custom).unwrap();
+        assert_eq!(windows::exe_in_folder(deck, &custom), None);
+        std::fs::write(custom.join("deckcraft.exe"), "x").unwrap();
+        assert_eq!(windows::exe_in_folder(deck, &custom), Some(custom.join("deckcraft.exe")));
+    }
+
+    /// With two copies in different scopes, the one that is the record's version is chosen, wherever it
+    /// was found; with no match, the first found.
+    #[cfg(windows)]
+    #[test]
+    fn the_copy_with_the_records_version_is_the_one_opened() {
+        let v = |s: &str| version::parse(s);
+        let old = PathBuf::from(r"D:\Old\deckcraft.exe");
+        let new = PathBuf::from(r"C:\Users\a\AppData\Local\Programs\ArtCraft\DeckCraft\deckcraft.exe");
+        let version_of = |p: &std::path::Path| if p == old { v("0.11.1") } else { v("0.12.0") };
+        let both = vec![old.clone(), new.clone()];
+        assert_eq!(windows::pick_candidate(both.clone(), v("0.12.0").as_ref(), version_of), Some(new.clone()));
+        assert_eq!(windows::pick_candidate(both.clone(), v("0.11.1").as_ref(), version_of), Some(old.clone()));
+        assert_eq!(windows::pick_candidate(both.clone(), v("0.99.0").as_ref(), version_of), Some(old.clone()));
+        assert_eq!(windows::pick_candidate(both, None, version_of), Some(old.clone()));
+        assert_eq!(windows::pick_candidate(Vec::new(), v("0.12.0").as_ref(), version_of), None);
+    }
+
+    /// Every exe under the given roots, in the order `exe_in_roots` prefers them, so a version match
+    /// can see a copy that an earlier root's older copy would otherwise hide.
+    #[cfg(windows)]
+    #[test]
+    fn every_root_is_searched_for_a_version_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = CraftApp::by_id("deckcraft").unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        let exes: Vec<PathBuf> = [&a, &b].iter().map(|r| r.join("ArtCraft").join("DeckCraft").join("deckcraft.exe")).collect();
+        for exe in &exes {
+            std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+            std::fs::write(exe, "x").unwrap();
+        }
+        assert_eq!(windows::exe_all_in_roots(deck, vec![a.clone(), b.clone()]), exes);
+        assert_eq!(windows::exe_in_roots(deck, vec![a, b]), exes.first().cloned());
+        assert!(windows::exe_all_in_roots(deck, vec![dir.path().join("none")]).is_empty());
     }
 
     #[test]
