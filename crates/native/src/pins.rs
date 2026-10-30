@@ -33,6 +33,17 @@ pub fn merged(mut pins: Pins, versions: &BTreeMap<String, VersionTrack>) -> Pins
     pins
 }
 
+/// Makes the file's folder when the launcher starts, before any app does. Flatpak mounts an app's
+/// grant for that folder only if it exists when the app starts, so an app started before the
+/// first pin would otherwise never see it until restarted.
+pub fn prepare_folder(path: &Path) {
+    if let Some(dir) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        log::warn!("couldn't create {} ({e}); Flatpak apps won't see version choices", dir.display());
+    }
+}
+
 /// Writes `path` so it matches `versions`. Returns whether the file changed.
 pub fn sync(path: &Path, versions: &BTreeMap<String, VersionTrack>) -> Result<bool, String> {
     let before = Pins::load(path);
@@ -51,6 +62,16 @@ mod tests {
 
     fn versions(entries: &[(&str, VersionTrack)]) -> BTreeMap<String, VersionTrack> {
         entries.iter().map(|(id, t)| (id.to_string(), t.clone())).collect()
+    }
+
+    #[test]
+    fn the_folder_exists_before_any_choice_is_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ArtCraft").join("versions").join("versions.json");
+        prepare_folder(&path);
+        assert!(path.parent().unwrap().is_dir());
+        assert!(!path.exists(), "no file until there is a choice");
+        prepare_folder(&path);
     }
 
     #[test]

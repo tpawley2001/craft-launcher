@@ -176,6 +176,9 @@ impl NativeBackend {
             last_check: Mutex::new(None),
         });
         let pins = craft_update::pins::Pins::default_path();
+        if let Some(path) = &pins {
+            crate::pins::prepare_folder(path);
+        }
         let backend = Self { shared, paths, http, source, platform: native_platform(), pins };
         backend.replay_cache();
         backend.detect_all();
