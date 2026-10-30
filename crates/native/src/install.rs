@@ -962,8 +962,8 @@ fn root_outcome(code: Option<i32>) -> Result<(), String> {
         Some(0) => Ok(()),
         // pkexec: 126 = the password prompt was dismissed.
         Some(126) => Err("cancelled".into()),
-        // pkexec: 127 = not authorized, or nothing could ask (no authentication agent).
-        Some(127) => Err("the system refused permission, or no polkit authentication agent was running to ask for it".into()),
+        // pkexec: 127 = not authorized, no authentication agent, or another pkexec error.
+        Some(127) => Err("the system installer stopped with error 127 (usually refused permission or no polkit authentication agent)".into()),
         Some(c) => Err(format!("the system installer stopped with error {c}")),
         None => Err("the system installer was interrupted".into()),
     }
@@ -3064,7 +3064,7 @@ mod tests {
         // No prompt could be shown (no polkit agent): a failure with its cause, not a cancel.
         let (ran, results) = two_debs_through_pkexec(127);
         assert_eq!(ran.len(), 1, "{ran:?}");
-        let error = "the system refused permission, or no polkit authentication agent was running to ask for it while handling 2 apps in one go. Try them one at a time.";
+        let error = "the system installer stopped with error 127 (usually refused permission or no polkit authentication agent) while handling 2 apps in one go. Try them one at a time.";
         assert_eq!(results, vec![Err(error.to_string()); 2]);
 
         // apt failed: both apps say so, and how to find the one at fault.
