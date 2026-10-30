@@ -52,7 +52,8 @@ pub fn rotate(dir: &Path) -> std::io::Result<(PathBuf, File)> {
 /// A log names the user's folders, so only the user may read it.
 fn create_private(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    // The mode only applies to a new file, so never open one that's already there.
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     options.open(path)
@@ -271,6 +272,17 @@ mod tests {
         let dir = temp_dir("private");
         let (path, _file) = rotate(&dir).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_log_path_someone_else_made_is_not_opened() {
+        let dir = temp_dir("taken");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(LOG_FILE);
+        std::fs::write(&path, "not ours").unwrap();
+        assert_eq!(create_private(&path).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(read(&path), "not ours");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
