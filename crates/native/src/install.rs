@@ -169,9 +169,12 @@ pub fn install_at(
     #[allow(unused_variables)]
     let version = release.version_label();
     let result = match kind {
+        // No team to check the signature against: refuse rather than install it unchecked.
+        #[cfg(target_os = "macos")]
+        PackageKind::Dmg if app.mac_team.is_none() => Err("the app isn't signed by its developer, so it wasn't installed".into()),
         #[cfg(target_os = "macos")]
         PackageKind::Dmg => {
-            macos::install_dmg(app, &file, existing, destination.as_deref(), job.replace, job.paths, &macos::Expect::release(release))
+            macos::install_dmg(app, &file, existing, destination.as_deref(), job.replace, job.paths, &macos::Expect::release(app, release))
                 .map(|path| Some(record(&version, kind, path, Vec::new(), false)))
         }
         #[cfg(windows)]
@@ -509,7 +512,7 @@ pub(crate) fn choose_kinds_with(
     available: &[PackageKind],
     can_pacman: bool,
 ) -> Vec<PackageKind> {
-    // Formats the launcher can't verify for this app (SolidCraft's unsigned macOS build) never count.
+    // Formats the launcher can't verify for this app (a macOS build with no `mac_team`) never count.
     let available: Vec<PackageKind> = available.iter().copied().filter(|k| app.installs(*k)).collect();
     let available = available.as_slice();
     if let Some(inst) = existing {
@@ -1484,10 +1487,6 @@ pub mod macos {
         super::mac_applications_dir(Path::new(SYSTEM_APPLICATIONS), dirs::home_dir().as_deref())
     }
 
-    /// The Apple Developer team that signs every Craft App and ArtCraft Launcher (Learning
-    /// Machines LLC): the macOS side of the Windows publisher check.
-    pub const TEAM_ID: &str = "DJ6XS33FX8";
-
     /// What a new copy must prove before it replaces anything. The checksum shows the download is
     /// the file the release lists; these show the app inside is the one the release promises.
     pub struct Expect<'a> {
@@ -1499,8 +1498,9 @@ pub mod macos {
     }
 
     impl<'a> Expect<'a> {
-        pub fn release(release: &'a Release) -> Self {
-            Self { team: Some(TEAM_ID), version: release.version.as_ref() }
+        /// What `release` of `app` must prove: the app's own team's signature, and the version.
+        pub fn release(app: &'a CraftApp, release: &'a Release) -> Self {
+            Self { team: app.mac_team, version: release.version.as_ref() }
         }
     }
 
@@ -3174,9 +3174,11 @@ mod tests {
     }
 
     #[test]
-    fn solidcraft_is_never_installed_from_its_unsigned_macos_build() {
+    fn a_macos_build_installs_only_when_its_team_is_known() {
         let sc = artcraft_launcher_core::CraftApp::by_id("solidcraft").unwrap();
-        assert_eq!(choose_kinds_with(sc, None, None, &[], &[PackageKind::Dmg], false), Vec::<PackageKind>::new());
+        assert_eq!(choose_kinds_with(sc, None, None, &[], &[PackageKind::Dmg], false), [PackageKind::Dmg]);
+        let unsigned = artcraft_launcher_core::CraftApp { mac_team: None, ..*sc };
+        assert_eq!(choose_kinds_with(&unsigned, None, None, &[], &[PackageKind::Dmg], false), Vec::<PackageKind>::new());
         let photo = artcraft_launcher_core::CraftApp::by_id("photocraft").unwrap();
         assert_eq!(choose_kinds_with(photo, None, None, &[], &[PackageKind::Dmg], false), [PackageKind::Dmg]);
     }
@@ -3333,8 +3335,9 @@ mod tests {
     mod macos_checks {
         use artcraft_launcher_core::{SUITE, version};
 
-        use super::macos::{Expect, TEAM_ID, install_dmg, signed_by};
+        use super::macos::{Expect, install_dmg, signed_by};
         use super::*;
+        use artcraft_launcher_core::catalog::ARTCRAFT_TEAM_ID as TEAM_ID;
 
         fn photocraft() -> &'static CraftApp {
             SUITE.iter().find(|a| a.id == "photocraft").unwrap()
@@ -3492,7 +3495,8 @@ mod tests {
             let image = dmg(dir.path(), "0.6.0");
             let release = Release { tag: "v0.6.0".into(), version: version::parse("0.6.0"), ..Release::default() };
 
-            let result = install_dmg(photocraft(), &image, Some(&existing), None, false, &Paths::under(dir.path()), &Expect::release(&release));
+            let result =
+                install_dmg(photocraft(), &image, Some(&existing), None, false, &Paths::under(dir.path()), &Expect::release(photocraft(), &release));
             assert_eq!(result, Err("the app isn't signed by its developer, so it wasn't installed".into()));
             assert_eq!(std::fs::read_to_string(current.join("Contents/MacOS/PhotoCraft")).unwrap(), "0.5.0");
             assert_eq!(

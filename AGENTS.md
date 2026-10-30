@@ -67,9 +67,9 @@ settings file must produce an error the user can act on, never a panic. Shared s
   `cargo xtask local`); keep it loopback-only and behind the `local-mirror` cargo feature, which
   release builds never enable.
 - Verify each download against the release's `SHA256SUMS.txt` before running or installing it.
-  Community apps get the same check. On macOS the launcher also requires a Developer ID signature
-  it can verify: an app without one (SolidCraft today, `installs_on_mac = false`) is not installed
-  there, only opened if present.
+  Community apps get the same check. On macOS the launcher also requires the Developer ID signature
+  of the app's own team (`CraftApp::mac_team`: ArtCraft's for official apps, SolidCraft's for
+  SolidCraft); an app with none (`mac_team = None`) is not installed there, only opened if present.
 - The details drawer's pictures are the one other download: JPEGs only, from a pinned tag of
   `https://raw.githubusercontent.com/storytold/craft-launcher-assets/` (`core::details`),
   capped at 2 MB each, cached, and never run. Pictures are not bundled in this repo.
