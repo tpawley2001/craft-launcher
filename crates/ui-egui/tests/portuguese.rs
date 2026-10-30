@@ -114,3 +114,13 @@ fn portuguese_ui_translates_labels_dates_and_messages() {
     table.get_by_label("Versão");
     assert!(table.query_all_by_label_contains("de ago. de 2026").count() >= 1);
 }
+
+/// Brazilian Portuguese writes the launcher's longest dates ("29 de set. de 2026"): the table's
+/// released column must show one whole, not cut to "29 de set...".
+#[test]
+fn the_table_shows_the_longest_dates_whole() {
+    let mut h = harness(ViewMode::Table);
+    h.run_steps(4);
+    let date = h.get_all_by_label_contains(" de 2026").next().expect("a release date in the table");
+    assert!(date.rect().width() > 110.0, "{:?}", date.rect());
+}
