@@ -1611,6 +1611,14 @@ pub mod macos {
         Ok(dest)
     }
 
+    /// Unsigned fixtures are allowed only in test builds, never in production installs.
+    pub(super) fn required_team(team: Option<&str>, test_build: bool) -> Result<Option<&str>, String> {
+        if team.is_none() && !test_build {
+            return Err("no macOS signing team was supplied, so the app wasn't installed".into());
+        }
+        Ok(team)
+    }
+
     /// Every check must succeed before the old copy or its record can be changed.
     pub(super) fn check_and_swap(
         app: &CraftApp,
@@ -1620,7 +1628,7 @@ pub mod macos {
         expect: &Expect<'_>,
         run: impl FnMut(&str, &[&str], Duration) -> Result<String, String>,
     ) -> Result<(), String> {
-        if let Some(team) = expect.team {
+        if let Some(team) = required_team(expect.team, cfg!(test))? {
             super::macos_verify::verify_with(app, bundle, team, run)?;
         }
         if let Some(want) = expect.version

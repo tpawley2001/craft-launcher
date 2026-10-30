@@ -108,6 +108,17 @@ mod tests {
     }
 
     #[test]
+    fn mac_install_requires_a_team_in_production_but_allows_unsigned_test_fixtures() {
+        use crate::install::macos::required_team;
+
+        let error = required_team(None, false).unwrap_err();
+        assert_eq!(error, "no macOS signing team was supplied, so the app wasn't installed");
+        assert_eq!(required_team(Some("G5QA5U5X2S"), false).unwrap(), Some("G5QA5U5X2S"));
+        assert_eq!(required_team(None, true).unwrap(), None);
+        assert_eq!(required_team(Some("G5QA5U5X2S"), true).unwrap(), Some("G5QA5U5X2S"));
+    }
+
+    #[test]
     fn mac_install_checks_are_bounded_and_only_pin_the_top_level_identity() {
         let app = solidcraft();
         let mut calls = Vec::new();
