@@ -960,8 +960,10 @@ fn run_as_root(args: &[&std::ffi::OsStr]) -> Result<(), String> {
 fn root_outcome(code: Option<i32>) -> Result<(), String> {
     match code {
         Some(0) => Ok(()),
-        // pkexec: 126 = the password prompt was dismissed, 127 = not authorized.
-        Some(126 | 127) => Err("cancelled".into()),
+        // pkexec: 126 = the password prompt was dismissed.
+        Some(126) => Err("cancelled".into()),
+        // pkexec: 127 = not authorized, or nothing could ask (no authentication agent).
+        Some(127) => Err("the system refused permission, or no polkit authentication agent was running to ask for it".into()),
         Some(c) => Err(format!("the system installer stopped with error {c}")),
         None => Err("the system installer was interrupted".into()),
     }
@@ -3058,6 +3060,12 @@ mod tests {
         let (ran, results) = two_debs_through_pkexec(126);
         assert_eq!(ran.len(), 1, "{ran:?}");
         assert_eq!(results, vec![Err("cancelled".to_string()); 2]);
+
+        // No prompt could be shown (no polkit agent): a failure with its cause, not a cancel.
+        let (ran, results) = two_debs_through_pkexec(127);
+        assert_eq!(ran.len(), 1, "{ran:?}");
+        let error = "the system refused permission, or no polkit authentication agent was running to ask for it while handling 2 apps in one go. Try them one at a time.";
+        assert_eq!(results, vec![Err(error.to_string()); 2]);
 
         // apt failed: both apps say so, and how to find the one at fault.
         let (ran, results) = two_debs_through_pkexec(100);
