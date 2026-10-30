@@ -171,7 +171,9 @@ pub fn install_at(
     let result = match kind {
         // No team to check the signature against: refuse rather than install it unchecked.
         #[cfg(target_os = "macos")]
-        PackageKind::Dmg if app.mac_team.is_none() => Err("the app isn't signed by its developer, so it wasn't installed".into()),
+        PackageKind::Dmg if app.mac_team.is_none() => {
+            Err("ArtCraft Launcher has no macOS signing team recorded for this app, so it wasn't installed here".into())
+        }
         #[cfg(target_os = "macos")]
         PackageKind::Dmg => {
             macos::install_dmg(app, &file, existing, destination.as_deref(), job.replace, job.paths, &macos::Expect::release(app, release))
@@ -1456,6 +1458,9 @@ pub(crate) mod linux {
 }
 
 #[cfg(target_os = "macos")]
+mod macos_verify;
+
+#[cfg(target_os = "macos")]
 pub mod macos {
     use std::time::Duration;
 
@@ -1577,6 +1582,9 @@ pub mod macos {
     ) -> Result<PathBuf, String> {
         let bundle = format!("{}.app", app.name);
         let src = mount.join(&bundle);
+        if !std::fs::symlink_metadata(&src).is_ok_and(|m| m.is_dir()) {
+            return Err("the disk image does not contain an app directory".into());
+        }
         crate::detect::macos::read_bundle(app, &src).ok_or("the disk image doesn't contain the app")?;
         let dir = applications_dir(existing, destination)?;
         let dest = existing.filter(|i| i.source == InstallSource::MacApp).map_or_else(|| dir.join(&bundle), |i| PathBuf::from(&i.location));
@@ -1595,27 +1603,32 @@ pub mod macos {
         // bundle's signature lives in its files, not in extended attributes.
         process::run(DITTO, &["--norsrc", "--noextattr", "--noacl", src_s, staged_s], Duration::from_secs(600))
             .map_err(|reason| format!("couldn't copy the app: {reason}"))?;
-        let checked = crate::detect::macos::read_bundle(app, &staged)
-            .ok_or_else(|| "the copied app is incomplete".to_string())
-            .and_then(|found| check(&staged, &found, expect));
-        checked?;
-        swap_into_place(&staged, &dest)?;
+        if !std::fs::symlink_metadata(&staged).is_ok_and(|m| m.is_dir()) {
+            return Err("the copied app is not an app directory".into());
+        }
+        let found = crate::detect::macos::read_bundle(app, &staged).ok_or("the copied app is incomplete")?;
+        check_and_swap(app, &staged, &dest, &found, expect, process::run)?;
         Ok(dest)
     }
 
-    /// Checks a copied bundle against what its release promises, before it replaces anything.
-    fn check(bundle: &Path, found: &Installed, expect: &Expect<'_>) -> Result<(), String> {
-        if let Some(team) = expect.team
-            && !signed_by(bundle, team)
-        {
-            return Err("the app isn't signed by its developer, so it wasn't installed".into());
+    /// Every check must succeed before the old copy or its record can be changed.
+    pub(super) fn check_and_swap(
+        app: &CraftApp,
+        bundle: &Path,
+        destination: &Path,
+        found: &Installed,
+        expect: &Expect<'_>,
+        run: impl FnMut(&str, &[&str], Duration) -> Result<String, String>,
+    ) -> Result<(), String> {
+        if let Some(team) = expect.team {
+            super::macos_verify::verify_with(app, bundle, team, run)?;
         }
         if let Some(want) = expect.version
             && !found.version.as_ref().is_some_and(|v| same_release(v, want))
         {
             return Err(format!("the app inside isn't version {want}, so it wasn't installed"));
         }
-        Ok(())
+        swap_into_place(bundle, destination)
     }
 
     /// Whether `bundle` has a valid Developer ID signature from `team`, nested code included. The
@@ -3497,7 +3510,7 @@ mod tests {
 
             let result =
                 install_dmg(photocraft(), &image, Some(&existing), None, false, &Paths::under(dir.path()), &Expect::release(photocraft(), &release));
-            assert_eq!(result, Err("the app isn't signed by its developer, so it wasn't installed".into()));
+            assert!(result.unwrap_err().contains("macOS verification did not succeed (signature integrity"));
             assert_eq!(std::fs::read_to_string(current.join("Contents/MacOS/PhotoCraft")).unwrap(), "0.5.0");
             assert_eq!(
                 std::fs::read_dir(&apps).unwrap().map(|e| e.unwrap().file_name()).collect::<Vec<_>>(),
