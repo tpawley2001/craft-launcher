@@ -440,26 +440,26 @@ pub mod linux {
         };
         let t = Duration::from_secs(10);
         let mut out = Vec::new();
-        let mut add = |manager, list: Vec<(String, String)>| {
-            out.extend(list.into_iter().filter(|(n, _)| ours(n)).map(|(name, version)| Package { manager, name, version }));
+        let mut add = |manager, user, list: Vec<(String, String)>| {
+            out.extend(list.into_iter().filter(|(n, _)| ours(n)).map(|(name, version)| Package { manager, name, version, user }));
         };
         if let Some(list) = capture("dpkg-query", &["-W", "-f", "${Package}|${db:Status-Status}|${Version}\n"], t) {
-            add(InstallSource::Deb, packages::parse_dpkg(&list));
+            add(InstallSource::Deb, false, packages::parse_dpkg(&list));
         }
         if let Some(list) = capture("rpm", &["-qa", "--qf", "%{NAME}|%{VERSION}\n"], t) {
-            add(InstallSource::Rpm, packages::parse_rpm(&list));
+            add(InstallSource::Rpm, false, packages::parse_rpm(&list));
         }
         // Only run `pacman` where its database exists: elsewhere `pacman` on PATH may be an unrelated program
         // (the Pac-Man game in /usr/games on Debian-family systems).
         if has_pacman_db()
             && let Some(list) = capture("pacman", &["-Q"], t)
         {
-            add(InstallSource::Pacman, packages::parse_pacman(&list));
+            add(InstallSource::Pacman, false, packages::parse_pacman(&list));
         }
         let arch = format!("--arch={}", std::env::consts::ARCH);
-        // User installs first: `packages::find` takes the first match, so an app installed both ways reads
-        // the user copy the launcher updates, not a stale system one (#881). The unscoped list after it
-        // still covers every system installation, named ones included (`--system` is only the default one).
+        // User installs are marked so `packages::find` reads the user copy the launcher updates, not a
+        // stale system one (#881). The unscoped list after it still covers every system installation,
+        // named ones included (`--system` is only the default one).
         let mut user_ids = Vec::new();
         for scope in [&["--user"][..], &[]] {
             let list_args = [&["list", "--app"][..], scope, &[&arch, "--columns=application,version"]].concat();
@@ -480,7 +480,7 @@ pub mod linux {
                         *version = v;
                     }
                 }
-                add(InstallSource::Flatpak, flatpaks);
+                add(InstallSource::Flatpak, !scope.is_empty(), flatpaks);
             }
         }
         out
