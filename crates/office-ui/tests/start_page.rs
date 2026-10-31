@@ -164,3 +164,18 @@ fn about_box_credits_the_upstream_apps() {
     h.get_by_label(&format!("Version {}", env!("CARGO_PKG_VERSION")));
     shot(&mut h, "jolly-roger-about-light");
 }
+
+#[test]
+fn settings_lists_each_apps_program() {
+    let mut config = Config { theme: ThemePref::Dark, ..Config::default() };
+    config.app_paths.insert(AppKind::PlunderLedger, PathBuf::from("/opt/ledger/plunder-ledger"));
+    let (mut h, log) = harness(config, sample_recent(), None);
+    h.get_by_label("Settings").click();
+    h.run();
+    h.get_by_label("Captain's Log program");
+    shot(&mut h, "jolly-roger-settings-dark");
+    h.get_by_label("Save").click();
+    h.run();
+    // Nothing changed, so nothing is written.
+    assert!(log.borrow().saved.is_empty());
+}
