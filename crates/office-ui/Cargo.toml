@@ -1,0 +1,25 @@
+[package]
+name = "jolly-roger-office-ui"
+description = "Jolly Roger Office's start page: New, Open and recent files across the suite, in egui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+jolly-roger-office-core = { workspace = true }
+egui = { workspace = true }
+log = { workspace = true }
+# Rasterises the suite's icons, which are SVG written in code (icons.rs). Already in Cargo.lock
+# through egui_extras.
+resvg = { version = "0.45", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+egui = { workspace = true, features = ["default_fonts"] }
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+tempfile = "3"

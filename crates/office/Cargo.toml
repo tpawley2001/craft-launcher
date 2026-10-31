@@ -1,0 +1,18 @@
+[package]
+name = "jolly-roger-office-core"
+description = "Jolly Roger Office: the suite's apps, file routing, recent files, settings and launching"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

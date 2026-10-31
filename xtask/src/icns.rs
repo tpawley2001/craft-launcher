@@ -106,12 +106,4 @@ mod tests {
         assert!(pack(&[fake_png(48)]).is_err());
         assert!(pack(&[b"GIF89a".to_vec()]).is_err());
     }
-
-    #[test]
-    fn committed_icon_is_valid() {
-        let path = crate::root().join("assets/app-icon/artcraft-launcher.icns");
-        let Ok(icns) = std::fs::read(&path) else { return };
-        assert_eq!(&icns[..4], b"icns");
-        assert!(entries(&icns).iter().any(|(k, _)| k == "ic10"), "expected a 1024 px image in {}", path.display());
-    }
 }

@@ -1,0 +1,24 @@
+[package]
+name = "jolly-roger-office"
+description = "Jolly Roger Office: the suite's start page and launcher for Captain's Log, Plunder Ledger and Broadside"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+default-run = "jolly-roger-office"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+jolly-roger-office-core = { workspace = true }
+jolly-roger-office-ui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "clipboard", "wgpu", "accesskit", "wayland", "x11"] }
+egui = { workspace = true }
+log = { workspace = true }
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+
+[dev-dependencies]
+tempfile = "3"
