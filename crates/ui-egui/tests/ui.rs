@@ -1707,8 +1707,7 @@ fn discord_link_opens_app_when_discord_is_installed() {
 }
 
 #[test]
-/// Background detection waits five minutes: it is not sent at startup or on every frame, and is
-/// sent once at the five-minute mark.
+/// Background app detection remains on its own five-minute cadence; release polling is separate.
 fn looks_again_at_installed_apps_every_few_minutes_not_every_frame() {
     let sent = Rc::new(RefCell::new(Vec::new()));
     let clock = Rc::new(Cell::new(NOW));
