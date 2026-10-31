@@ -1707,8 +1707,8 @@ fn discord_link_opens_app_when_discord_is_installed() {
 }
 
 #[test]
-/// Background detection waits five minutes: it is not sent at startup or on every frame, and is
-/// sent once at the five-minute mark.
+/// Background detection waits twelve minutes: it is not sent at startup or on every frame, and is
+/// sent once at the twelve-minute mark.
 fn looks_again_at_installed_apps_every_few_minutes_not_every_frame() {
     let sent = Rc::new(RefCell::new(Vec::new()));
     let clock = Rc::new(Cell::new(NOW));
@@ -1731,12 +1731,12 @@ fn looks_again_at_installed_apps_every_few_minutes_not_every_frame() {
     let detects = |sent: &Rc<RefCell<Vec<Command>>>| sent.borrow().iter().filter(|c| **c == Command::Detect).count();
     h.run_steps(10);
     assert_eq!(detects(&sent), 0, "the backend's own startup detection is enough");
-    clock.set(NOW + 4 * 60);
+    clock.set(NOW + 11 * 60);
     h.run_steps(10);
-    assert_eq!(detects(&sent), 0, "not before five minutes");
-    clock.set(NOW + 5 * 60);
+    assert_eq!(detects(&sent), 0, "not before twelve minutes");
+    clock.set(NOW + 12 * 60);
     h.run_steps(10);
-    assert_eq!(detects(&sent), 1, "once at five minutes, not once per frame");
+    assert_eq!(detects(&sent), 1, "once at twelve minutes, not once per frame");
 }
 
 #[test]
@@ -1907,11 +1907,11 @@ fn feed_announcements_and_alerts_show_until_dismissed() {
 }
 
 #[test]
-fn automatic_checks_run_every_five_minutes() {
+fn automatic_checks_run_every_twelve_minutes() {
     use artcraft_launcher_ui_egui::settings::CheckEvery;
-    assert_eq!(Settings::default().check_every.seconds(), Some(300));
+    assert_eq!(Settings::default().check_every.seconds(), Some(720));
     // Older saved choices still load, and mean "automatically" now.
-    assert_eq!(CheckEvery::Day.seconds(), Some(300));
+    assert_eq!(CheckEvery::Day.seconds(), Some(720));
     assert_eq!(CheckEvery::Never.seconds(), None);
 }
 
